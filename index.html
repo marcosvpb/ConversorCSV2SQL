@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSV para SQL</title>
+<style>
+  :root { color-scheme: light; --bg:#f4f6fa; --panel:#fff; --text:#172033; --muted:#64748b; --line:#dce3ed; --accent:#2563eb; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+  main { max-width:1250px; margin:0 auto; padding:28px 18px 48px; }
+  h1 { margin:0 0 6px; font-size:clamp(1.7rem,3vw,2.25rem); }
+  .intro { color:var(--muted); margin:0 0 22px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; margin:0 0 18px; box-shadow:0 3px 12px #1e293b08; }
+  h2 { font-size:1.1rem; margin:0 0 14px; }
+  label { display:block; font-weight:650; margin-bottom:6px; }
+  input, select, textarea, button { font:inherit; }
+  input, select, textarea { width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:9px 11px; background:white; color:var(--text); }
+  textarea { resize:vertical; min-height:150px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+  #csvInput { min-height:220px; }
+  #sqlOutput { min-height:320px; }
+  .controls { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; align-items:end; }
+  .field { min-width:0; }
+  .hint { color:var(--muted); font-size:.88rem; margin-top:6px; }
+  .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+  button { border:0; border-radius:8px; padding:10px 15px; cursor:pointer; font-weight:700; }
+  .primary { background:var(--accent); color:white; }
+  .secondary { background:#e8eef8; color:#1e293b; }
+  button:hover { filter:brightness(.97); }
+  .status { margin-top:10px; color:var(--muted); font-size:.92rem; }
+  .error { color:#b91c1c; }
+  .table-wrap { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; min-width:760px; }
+  th, td { padding:9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:middle; }
+  th { font-size:.85rem; color:#475569; background:#f8fafc; }
+  td input, td select { min-width:100px; }
+  td .col-name { min-width:150px; }
+  td .col-size { min-width:90px; }
+  .badge { display:inline-block; border-radius:99px; padding:2px 8px; background:#e8eef8; font-size:.8rem; color:#334155; }
+  @media (max-width:760px) { .controls { grid-template-columns:repeat(2,minmax(0,1fr)); } main { padding:18px 12px 32px; } }
+  @media (max-width:460px) { .controls { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Conversor de CSV para SQL</h1>
+  <p class="intro">Cole o CSV, ajuste as opções e revise os tipos detectados antes de gerar o CREATE TABLE e os INSERTs. O SQL gerado usa sintaxe do Microsoft SQL Server.</p>
+
+  <section class="panel">
+    <h2>1. Dados CSV</h2>
+    <label for="csvInput">Conteúdo CSV</label>
+    <textarea id="csvInput" spellcheck="false" placeholder="id;nome;preco;ativo&#10;1;Ana;19.90;true&#10;2;Bruno;25.50;false"></textarea>
+    <div class="controls" style="margin-top:14px">
+      <div class="field">
+        <label for="delimiter">Separador de campos</label>
+        <input id="delimiter" value=";" maxlength="5" aria-describedby="delimiterHint">
+        <div class="hint" id="delimiterHint">Use ; , | ou outro separador.</div>
+      </div>
+      <div class="field">
+        <label for="tableName">Nome da tabela</label>
+        <input id="tableName" value="MinhaTabela" placeholder="MinhaTabela">
+      </div>
+      <div class="field">
+        <label for="collation">Collation para colunas VARCHAR</label>
+        <select id="collation">
+          <option value="SQL_Latin1_General_CP1_CI_AS" selected>SQL_Latin1_General_CP1_CI_AS</option>
+          <option value="SQL_Latin1_General_CP1_CI_AI">SQL_Latin1_General_CP1_CI_AI</option>
+          <option value="Latin1_General_CI_AS">Latin1_General_CI_AS</option>
+          <option value="Latin1_General_CI_AI">Latin1_General_CI_AI</option>
+          <option value="Latin1_General_100_CI_AS_SC">Latin1_General_100_CI_AS_SC</option>
+          <option value="Latin1_General_100_CI_AI_SC">Latin1_General_100_CI_AI_SC</option>
+          <option value="Latin1_General_100_CI_AS_SC_UTF8">Latin1_General_100_CI_AS_SC_UTF8</option>
+          <option value="Portuguese_CI_AS">Portuguese_CI_AS</option>
+          <option value="Portuguese_CI_AI">Portuguese_CI_AI</option>
+          <option value="Portuguese_100_CI_AI">Portuguese_100_CI_AI</option>
+          <option value="Portuguese_100_CI_AS">Portuguese_100_CI_AS</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="schemaName">Schema (opcional)</label>
+        <input id="schemaName" value="dbo" placeholder="dbo">
+      </div>
+    </div>
+    <div class="actions">
+      <button class="primary" id="analyzeBtn">Analisar CSV</button>
+      <button class="secondary" id="exampleBtn">Carregar exemplo</button>
+      <button class="secondary" id="clearBtn">Limpar</button>
+    </div>
+    <div id="status" class="status" role="status">Cole os dados e clique em “Analisar CSV”.</div>
+  </section>
+
+  <section class="panel">
+    <h2>2. Rever e editar colunas</h2>
+    <p class="hint">Os tipos são sugeridos com base nos valores encontrados. Pode alterar o nome, tipo e tamanho de cada coluna. VARCHAR usa a collation configurada acima.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Nome da coluna</th><th>Tipo SQL</th><th>Tamanho / precisão</th><th>Nulos</th></tr></thead>
+        <tbody id="columnsBody"><tr><td colspan="5" class="hint">As colunas aparecerão aqui após a análise.</td></tr></tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button class="primary" id="generateBtn">Gerar SQL</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>3. SQL gerado</h2>
+    <label for="sqlOutput">CREATE TABLE + INSERTs</label>
+    <textarea id="sqlOutput" spellcheck="false" readonly placeholder="O SQL gerado aparecerá aqui..."></textarea>
+    <div class="actions">
+      <button class="primary" id="copyBtn">Copiar SQL</button>
+      <button class="secondary" id="downloadBtn">Baixar .sql</button>
+    </div>
+    <div id="outputStatus" class="status" role="status"></div>
+  </section>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const typeOptions = ['VARCHAR', 'NVARCHAR', 'CHAR', 'NCHAR', 'INT', 'BIGINT', 'SMALLINT', 'TINYINT', 'BIT', 'DECIMAL', 'FLOAT', 'DATE', 'DATETIME2', 'UNIQUEIDENTIFIER', 'TEXT'];
+  let rows = [], columns = [];
+
+  function parseCSV(text, delimiter) {
+    const result = [];
+    let row = [], cell = '', quoted = false;
+    text = text.replace(/^\uFEFF/, '');
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === '"') {
+        if (quoted && text[i + 1] === '"') { cell += '"'; i++; }
+        else quoted = !quoted;
+      } else if (!quoted && ch === delimiter) {
+        row.push(cell); cell = '';
+      } else if (!quoted && (ch === '\n' || ch === '\r')) {
+        if (ch === '\r' && text[i + 1] === '\n') i++;
+        row.push(cell); result.push(row); row = []; cell = '';
+      } else cell += ch;
+    }
+    if (quoted) throw new Error('Existe uma aspa dupla aberta sem fechamento.');
+    if (cell.length || row.length) { row.push(cell); result.push(row); }
+    while (result.length && result[result.length - 1].every(v => v.trim() === '')) result.pop();
+    return result;
+  }
+
+  function detectType(values) {
+    const vals = values.map(v => v.trim()).filter(v => v !== '');
+    if (!vals.length) return {type:'VARCHAR', size: '255'};
+    if (vals.every(v => /^(true|false|0|1)$/i.test(v)) && vals.some(v => /^(true|false)$/i.test(v))) return {type:'BIT', size:''};
+    if (vals.every(v => /^[-+]?\d+$/.test(v))) {
+      const nums = vals.map(Number);
+      if (nums.every(n => Number.isSafeInteger(n))) {
+        const min = Math.min(...nums), max = Math.max(...nums);
+        if (min >= 0 && max <= 255) return {type:'INT', size:''};
+        if (min >= -2147483648 && max <= 2147483647) return {type:'INT', size:''};
+        if (nums.every(n => Math.abs(n) <= Number.MAX_SAFE_INTEGER)) return {type:'BIGINT', size:''};
+      }
+    }
+    if (vals.every(v => /^[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?$/.test(v)) && vals.some(v => /[.eE]/.test(v))) {
+      const decimals = Math.max(0, ...vals.map(v => (v.split(/[eE]/)[0].split('.')[1] || '').length));
+      const integers = Math.max(1, ...vals.map(v => (v.split(/[eE]/)[0].replace(/^[-+]?0*/, '').split('.')[0] || '').length));
+      return {type:'DECIMAL', size:`${Math.min(38, Math.max(1, integers + decimals))},${Math.min(38, decimals)}`};
+    }
+    if (vals.every(v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v)))) return {type:'DATE', size:''};
+    if (vals.every(v => /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(v) && !isNaN(Date.parse(v)))) return {type:'DATETIME2', size:'0'};
+    if (vals.every(v => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v))) return {type:'UNIQUEIDENTIFIER', size:''};
+    return {type:'VARCHAR', size:String(Math.max(1, Math.min(8000, ...[Math.max(...vals.map(v => v.length)), 255])))};
+  }
+
+  function quoteIdentifier(name) {
+    return '[' + String(name).replace(/]/g, ']]') + ']';
+  }
+  function sqlString(value) { return "'" + String(value).replace(/'/g, "''") + "'"; }
+  function isBlank(v) { return v == null || String(v).trim() === ''; }
+
+  function analyze() {
+    try {
+      const delimiter = $('delimiter').value;
+      if (!delimiter) throw new Error('Informe um separador.');
+      const parsed = parseCSV($('csvInput').value, delimiter[0]);
+      if (parsed.length < 2) throw new Error('Informe a linha de cabeçalho e pelo menos uma linha de dados.');
+      const headers = parsed[0].map((h, i) => {
+        const normalized = h.trim().toLowerCase().replace(/\\s+/g, '_');
+        return normalized || `coluna${i + 1}`;
+      });
+      const data = parsed.slice(1).filter(r => r.some(v => v.trim() !== ''));
+      if (!data.length) throw new Error('Não foram encontrados registos de dados.');
+      const badRow = data.findIndex(r => r.length !== headers.length);
+      if (badRow !== -1) throw new Error(`A linha de dados ${badRow + 2} tem ${data[badRow].length} campos; eram esperados ${headers.length}. Verifique o separador e as aspas.`);
+      rows = data;
+      columns = headers.map((name, idx) => {
+        const detected = detectType(data.map(r => r[idx]));
+        return {originalName:name, name, type:detected.type, size:detected.size, nullable:data.some(r => isBlank(r[idx]))};
+      });
+      renderColumns();
+      $('status').textContent = `${headers.length} coluna(s) e ${data.length} registo(s) analisados. Reveja os tipos e clique em “Gerar SQL”.`;
+      $('status').className = 'status';
+      generateSQL();
+    } catch (e) {
+      $('status').textContent = e.message;
+      $('status').className = 'status error';
+    }
+  }
+
+  function renderColumns() {
+    const body = $('columnsBody');
+    body.innerHTML = '';
+    columns.forEach((col, i) => {
+      const tr = document.createElement('tr');
+      const number = document.createElement('td'); number.textContent = String(i + 1); tr.appendChild(number);
+      const nameTd = document.createElement('td');
+      const name = document.createElement('input'); name.className='col-name'; name.value=col.name; name.setAttribute('aria-label', `Nome da coluna ${i+1}`);
+      name.addEventListener('input', () => { columns[i].name = name.value; }); nameTd.appendChild(name); tr.appendChild(nameTd);
+      const typeTd = document.createElement('td');
+      const type = document.createElement('select'); type.setAttribute('aria-label', `Tipo da coluna ${i+1}`);
+      typeOptions.forEach(t => { const opt=document.createElement('option'); opt.value=t; opt.textContent=t; type.appendChild(opt); });
+      type.value=col.type; type.addEventListener('change', () => { columns[i].type=type.value; renderColumns(); }); typeTd.appendChild(type); tr.appendChild(typeTd);
+      const sizeTd = document.createElement('td');
+      const size = document.createElement('input'); size.className='col-size'; size.value=col.size; size.placeholder=col.type==='DECIMAL'?'precisão,escala':'tamanho'; size.setAttribute('aria-label', `Tamanho ou precisão da coluna ${i+1}`);
+      size.disabled = !['VARCHAR','NVARCHAR','CHAR','NCHAR','DECIMAL','DATETIME2'].includes(col.type);
+      size.addEventListener('input', () => { columns[i].size=size.value; }); sizeTd.appendChild(size); tr.appendChild(sizeTd);
+      const nullTd = document.createElement('td');
+      const nullable = document.createElement('select'); nullable.setAttribute('aria-label', `Permitir nulos na coluna ${i+1}`);
+      [['true','NULL'],['false','NOT NULL']].forEach(([v,label])=>{const opt=document.createElement('option');opt.value=v;opt.textContent=label;nullable.appendChild(opt);});
+      nullable.value=String(col.nullable); nullable.addEventListener('change',()=>{columns[i].nullable=nullable.value==='true';}); nullTd.appendChild(nullable); tr.appendChild(nullTd);
+      body.appendChild(tr);
+    });
+  }
+
+  function typeDeclaration(col) {
+    const type = col.type.toUpperCase();
+    if (['VARCHAR','NVARCHAR','CHAR','NCHAR'].includes(type)) {
+      let size = parseInt(col.size, 10);
+      if (!Number.isFinite(size) || size < 1) size = 255;
+      if (size > 8000 && ['VARCHAR','CHAR'].includes(type)) size = 'MAX';
+      else if (size > 4000 && ['NVARCHAR','NCHAR'].includes(type)) size = 'MAX';
+      let declaration = `${type}(${size})`;
+      if (type === 'VARCHAR' && $('collation').value.trim()) {
+        const coll = $('collation').value.trim();
+        if (!/^[A-Za-z0-9_]+$/.test(coll)) throw new Error('A collation deve conter apenas letras, números e underscore.');
+        declaration += ` COLLATE ${coll}`;
+      }
+      return declaration;
+    }
+    if (type === 'DECIMAL') {
+      const match = String(col.size || '18,2').match(/^\s*(\d{1,2})\s*,\s*(\d{1,2})\s*$/);
+      if (!match || +match[1] < 1 || +match[1] > 38 || +match[2] > +match[1]) throw new Error(`Precisão/escala inválida para a coluna "${col.name}". Use, por exemplo, 18,2.`);
+      return `DECIMAL(${+match[1]},${+match[2]})`;
+    }
+    if (type === 'DATETIME2') {
+      const scale = col.size === '' ? 7 : Number(col.size);
+      if (!Number.isInteger(scale) || scale < 0 || scale > 7) throw new Error(`Escala DATETIME2 inválida na coluna "${col.name}" (0 a 7).`);
+      return `DATETIME2(${scale})`;
+    }
+    return type;
+  }
+
+  function convertValue(value, col, rowNumber) {
+    if (isBlank(value)) {
+      if (!col.nullable) throw new Error(`A coluna "${col.name}" está definida como NOT NULL, mas o registo ${rowNumber} está vazio.`);
+      return 'NULL';
+    }
+    const type = col.type.toUpperCase(), v = String(value).trim();
+    if (['INT','BIGINT','SMALLINT','TINYINT'].includes(type)) {
+      if (!/^[-+]?\d+$/.test(v)) throw new Error(`Valor "${v}" inválido para ${type} na coluna "${col.name}", registo ${rowNumber}.`);
+      return v;
+    }
+    if (type === 'BIT') {
+      if (/^(true|1)$/i.test(v)) return '1';
+      if (/^(false|0)$/i.test(v)) return '0';
+      throw new Error(`Valor "${v}" inválido para BIT na coluna "${col.name}", registo ${rowNumber}. Use true/false ou 1/0.`);
+    }
+    if (['DECIMAL','FLOAT','REAL','NUMERIC'].includes(type)) {
+      if (!/^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$/.test(v)) throw new Error(`Valor "${v}" inválido para ${type} na coluna "${col.name}", registo ${rowNumber}.`);
+      return v.replace(',', '.');
+    }
+    if (type === 'DATE' && !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new Error(`Data "${v}" inválida na coluna "${col.name}", registo ${rowNumber}. Use AAAA-MM-DD.`);
+    if (type === 'DATETIME2' && isNaN(Date.parse(v))) throw new Error(`Data/hora "${v}" inválida na coluna "${col.name}", registo ${rowNumber}.`);
+    if (type === 'UNIQUEIDENTIFIER' && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) throw new Error(`GUID "${v}" inválido na coluna "${col.name}", registo ${rowNumber}.`);
+    return sqlString(value);
+  }
+
+  function generateSQL() {
+    if (!columns.length || !rows.length) {
+      $('sqlOutput').value = '';
+      $('outputStatus').textContent = 'Analise um CSV primeiro.';
+      return;
+    }
+    try {
+      const table = $('tableName').value.trim();
+      const schema = $('schemaName').value.trim();
+      if (!table) throw new Error('Informe o nome da tabela.');
+      if (!columns.every(c => c.name.trim())) throw new Error('Todas as colunas precisam de um nome.');
+      const colNames = columns.map(c => c.name.trim().toLowerCase().replace(/\\s+/g, '_'));
+      if (new Set(colNames).size !== colNames.length) throw new Error('Existem nomes de colunas repetidos.');
+      const fullTable = schema ? `${quoteIdentifier(schema)}.${quoteIdentifier(table)}` : quoteIdentifier(table);
+      const normalizedColumnName = c => c.name.trim().toLowerCase().replace(/\\s+/g, '_');
+      const definitions = columns.map(c => `    ${quoteIdentifier(normalizedColumnName(c))} ${typeDeclaration(c)} ${c.nullable ? 'NULL' : 'NOT NULL'}`);
+      const lines = ['-- SQL gerado a partir de CSV', '-- Revise os tipos e valide os dados antes de executar.', '', `CREATE TABLE ${fullTable} (`, definitions.join(',\n'), ');', ''];
+      rows.forEach((row, idx) => {
+        const values = row.map((value, cidx) => convertValue(value, columns[cidx], idx + 2));
+        lines.push(`INSERT INTO ${fullTable} (${columns.map(c => quoteIdentifier(normalizedColumnName(c))).join(', ')})`);
+        lines.push(`VALUES (${values.join(', ')});`);
+      });
+      $('sqlOutput').value = lines.join('\n');
+      $('outputStatus').textContent = `${rows.length} INSERT(s) gerado(s).`;
+      $('outputStatus').className = 'status';
+    } catch (e) {
+      $('outputStatus').textContent = e.message;
+      $('outputStatus').className = 'status error';
+    }
+  }
+
+  $('analyzeBtn').addEventListener('click', analyze);
+  $('generateBtn').addEventListener('click', generateSQL);
+  $('exampleBtn').addEventListener('click', () => {
+    $('csvInput').value = 'id;nome;preco;ativo;data_cadastro\n1;Ana Silva;19.90;true;2025-01-15\n2;Bruno Costa;25.50;false;2025-02-20\n3;Carla Souza;8.75;true;2025-03-02';
+    $('delimiter').value = ';'; $('tableName').value = 'Produtos'; $('schemaName').value = 'dbo'; analyze();
+  });
+  $('clearBtn').addEventListener('click', () => {
+    $('csvInput').value=''; $('columnsBody').innerHTML='<tr><td colspan="5" class="hint">As colunas aparecerão aqui após a análise.</td></tr>';
+    $('sqlOutput').value=''; rows=[]; columns=[]; $('status').textContent='Cole os dados e clique em “Analisar CSV”.'; $('outputStatus').textContent='';
+  });
+  $('copyBtn').addEventListener('click', async () => {
+    const value = $('sqlOutput').value;
+    if (!value) { $('outputStatus').textContent='Não há SQL para copiar.'; return; }
+    try { await navigator.clipboard.writeText(value); $('outputStatus').textContent='SQL copiado para a área de transferência.'; }
+    catch { $('sqlOutput').focus(); $('sqlOutput').select(); $('outputStatus').textContent='Selecionei o SQL; copie usando Ctrl+C.'; }
+  });
+  $('downloadBtn').addEventListener('click', () => {
+    const value = $('sqlOutput').value;
+    if (!value) { $('outputStatus').textContent='Não há SQL para baixar.'; return; }
+    const blob = new Blob([value], {type:'text/sql;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const safeName = ($('tableName').value.trim() || 'exportacao').replace(/[^a-z0-9_-]/gi, '_');
+    a.download = `${safeName}.sql`; a.click(); URL.revokeObjectURL(a.href);
+  });
+})();
+</script>
+</body>
+</html>
