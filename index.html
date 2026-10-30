@@ -234,11 +234,15 @@
       if (size > 8000 && ['VARCHAR','CHAR'].includes(type)) size = 'MAX';
       else if (size > 4000 && ['NVARCHAR','NCHAR'].includes(type)) size = 'MAX';
       let declaration = `${type}(${size})`;
-      if (type === 'VARCHAR' && $('collation').value.trim()) {
-        const coll = $('collation').value.trim();
-        if (!/^[A-Za-z0-9_]+$/.test(coll)) throw new Error('A collation deve conter apenas letras, números e underscore.');
-        declaration += ` COLLATE ${coll}`;
-      }
+if (['VARCHAR', 'NVARCHAR', 'CHAR', 'NCHAR'].includes(type) && $('collation').value.trim()) {
+    const coll = $('collation').value.trim();
+
+    if (!/^[A-Za-z0-9_]+$/.test(coll)) {
+        throw new Error('A collation deve conter apenas letras, números e underscore.');
+    }
+
+    declaration += ` COLLATE ${coll}`;
+}
       return declaration;
     }
     if (type === 'DECIMAL') {
