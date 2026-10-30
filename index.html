@@ -51,11 +51,15 @@
     <label for="csvInput">Conteúdo CSV</label>
     <textarea id="csvInput" spellcheck="false" placeholder="id;nome;preco;ativo&#10;1;Ana;19.90;true&#10;2;Bruno;25.50;false"></textarea>
     <div class="controls" style="margin-top:14px">
-      <div class="field">
-        <label for="delimiter">Separador de campos</label>
-        <input id="delimiter" value=";" maxlength="5" aria-describedby="delimiterHint">
-        <div class="hint" id="delimiterHint">Use ; , | ou outro separador.</div>
-      </div>
+<div class="field">
+    <label for="delimiter">Separador de campos</label>
+    <input
+        id="delimiter"
+        value=";"
+        maxlength="5"
+        title="Informe o separador do CSV. Exemplos: ; , | ou TAB."
+    >
+</div>
       <div class="field">
         <label for="tableName">Nome da tabela</label>
         <input id="tableName" value="MinhaTabela" placeholder="MinhaTabela">
